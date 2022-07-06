@@ -1,0 +1,650 @@
+---
+title: "Toksyczność i kompetytywność w grach komputerowych- raport z badania"
+author: Michał Kostewicz
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: false  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+editor_options: 
+  chunk_output_type: console
+---
+Spis treści jest klikalny, tj. można kliknąć na konkretną sekcję, aby zostać do niej przeniesionym
+
+```{r setup, echo=F, include=F}
+library(tidyverse)
+library(psych)
+library(haven)
+library(broom)
+library(QuantPsyc)
+library(readr)
+library(ggplot2) #wykresy
+library(gghalves) #do raincloud plotów
+library(dplyr) #data hygiene
+library(viridis) #kolory viridis
+library(colorspace) #colorspace color palette
+library(ggExtra) #marginal density plots & histograms
+
+
+setwd("C:/Users/micha/Desktop/studia/analiza wynikow z empirki w r")
+
+```
+
+```{r echo=F, include=F}
+baza<- read.csv("baza_empirka_nowa.csv")
+
+baza <- baza %>% 
+     mutate_at(c("SDO3","SDO4"), funs(recode(., `1`=7, `2`=6,`3`=5,`4`=4,`5`=3,`6`=2,`7`=1, .default = NaN)))
+
+baza<- baza%>%
+  mutate(AGE=as.integer(AGE))%>%    
+  filter(Finished==1, 
+           ResponseId!="R_1dGhntm47B83l2J", #troll
+           ResponseId!="R_BXvOIo302WbgiUF", #troll
+           ResponseId!="R_xa4Faw7Mz6fxIEF", #troll
+           ResponseId!="R_1jInEoMbXYE92UD", #troll
+           ResponseId!="R_1hKgfNvTn5gyMXB", #troll
+           ResponseId!="R_3DqNX1aO1xZDRGN", #czas wypełnienia
+           ResponseId!="R_2YW03xGhA45FUbt", #czas wypełnienia
+         ZGODA==1,
+         AGE>=18)%>%
+  rowwise() %>%
+  mutate(RWA_M=(RWA1+RWA2+RWA3+RWA4+RWA5+RWA6)/6,
+         SDO_M=(SDO1+SDO2+SDO3+SDO4+SDO5)/5,
+         GG_M=(GG1+GG2+GG3+GG4+GG5+GG6+GG7+GG8+GG9+GG10+GG11+GG12+GG13+GG14+GG15+GG16)/16,
+         SB_M=(ASI10+ASI9+ASI8+ASI3+ASI1)/5,
+         SH_M=(ASI2+ASI4+ASI5+ASI6+ASI7)/5,
+         TOX1_M=(TOX1+TOX2+TOX3+TOX4+TOX5)/5,
+         TOX2_M=(TOX6+TOX7+TOX8+TOX9+TOX10)/5)
+```
+
+
+
+```{r stworzenie tła, echo=F, include=F}
+
+#sos: Doing Better Data Visualization Hehman, Xie (2021)
+
+theme_minimalism <- function(){
+ theme_minimal() + # ggplot′s minimal theme hides many unnecessary features of plot
+ theme( # make modifications to the theme
+  panel.grid.major.y=element_blank(),  # hide major grid for y axis 
+  panel.grid.minor.y=element_blank(),  # hide minor grid for y axis
+  panel.grid.major.x=element_blank(),  # hide major grid for x axis
+  panel.grid.minor.x=element_blank(),  # hide minor grid for x axis
+  text=element_text(size=14),          # font aesthetics
+  axis.text=element_text(size=12),
+  axis.title=element_text(size=14, face="bold"))
+}
+```
+
+```{r baza, echo=FALSE, include=F}
+#baza<- read_sav("baza_empirka_nowa.sav")
+baza<- baza[-c(1:17)]
+baza_i<-baza
+
+glimpse(baza)
+describe(baza, omit=T)
+
+baza<- baza%>%
+  filter(SEX!=3)
+
+baza$SEX<-as.ordered(baza$SEX)
+baza$SEX<- recode_factor(baza$SEX, '2'="Mezczyzna", '1'="Kobieta")
+
+baza %>%
+  dplyr::select(RWA_M:TOX2_M) %>%
+  pivot_longer(cols = RWA_M:TOX2_M, names_to = "variable", values_to = "value") %>%
+  group_by(variable) %>%
+  summarise(mean = mean(value, na.rm = T),
+            sd = sd(value, na.rm = T),
+            min= min(value, na.rm=T),
+            max=max(value, na.rm=T))
+
+```
+
+Badanie zostało przeprowadzone miedzy 19 a 30 marca 2021 za pomocą platformy Qualtrics.
+
+Badanie miało formę jednoczęściowego kwestionariusza, którego wypełnienie zajmowało około 10-12 minut.
+
+Badanie było dystrybuowane na Facebooku na grupach o tematyce okołokomputerowej oraz grupach skupiających się na konkretnych grach.
+
+## Cel badania
+
+Badanie miało na celu znalezienie zmiennych psychologicznych, które mogłyby **wyjaśnić toksyczność w grach komputerowych**.
+
+Ponadto sprawdzałem, czy osoby deklarujące granie w **gry kompetytywne**, czyli takie, w których występuje rywalizacja między graczami, będą osiągać **wyższe poziomy toksyczności**
+
+## Statystyki demograficzne uczestników badania
+
+W link z ankietą kliknęło 1821 osób, z czego 950 osób ją ukończyło (52,2%). 
+
+Od tej sumy zostały odjęte osoby niepełnoletnie (n= 108; 5,9%) oraz osoby, które wypełniły ankietę poprzez uzupełnianie odpowiedzi otwartych w sposób niepowiązany z badaniem (n= 6). Z bazy danych usunięte zostały także kolejne dwie osoby, które wypełniały ankietę dłużej o kilkadziesiąt odchyleń standardowych niż reszta ankietowanych (n= 2). 
+
+Na następnych wykresach zobaczysz dane demograficzne osób, które wzięły udział w badaniu
+
+### Płeć
+
+```{r plec, echo=F}
+baza_i$SEX<- as.ordered(baza_i$SEX)
+baza_i$SEX<-recode(baza_i$SEX, '1'="Kobieta",'2'="Mezczyzna",'3'="Inna")
+
+baza_i%>%
+  ggplot(aes(x=SEX))+
+  geom_bar(width=0.7,fill="#D9A7F6")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Płeć")
+```
+
+### Miejsce zamieszkania
+```{r, echo=F}
+baza_i$HOME<- as.ordered(baza_i$HOME)
+baza_i$HOME<-recode(baza_i$HOME, '1'="Wieś", '2'="Miasto do 20k", '3'="Miasto 20k-100k", '4'='Miasto 100k-500k', '5'="Miasto 500k+")
+
+
+baza_i%>%
+  ggplot(aes(x=HOME))+
+  geom_bar(width=0.7,fill="#D9A7F6")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Miejsce zamieszkania")
+```
+
+### Wykształcenie
+```{r, echo=F}
+baza_i$EDUC<- as.ordered(baza_i$EDUC)
+baza_i$EDUC<-recode(baza_i$EDUC, '1'="Brak", '2'="Podstawowe", '3'="Średnie", '4'='Zawodowe', '5'="Student/-ka", '6'="Wyższe")
+
+
+baza_i%>%
+  ggplot(aes(x=EDUC))+
+  geom_bar(width=0.7,fill="#D9A7F6")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Wykształcenie")
+```
+
+## Dane odnośnie grania
+### Od kiedy grają w gry komputerowe?
+```{r, echo=F}
+baza_i$GRY1<- as.ordered(baza_i$GRY1)
+baza_i$GRY1<-recode(baza_i$GRY1, '1'="do 1 roku", '2'="od 1 do 3 lat", '3'="od 3 do 5 lat", '4'='od 5 do 10 lat', '5'="od 10 do 15 lat", '6'="ponad 15 lat")
+
+
+baza_i%>%
+  ggplot(aes(x=GRY1))+
+  geom_bar(width=0.7,fill="#39DBDB")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Od jak dawna grasz w gry komputerowe?")
+```
+
+### W jaki typ gier grają?
+```{r, include=F}
+#baza_i$czyobie<- as.ordered(baza_i$czyobie)
+#baza_i$czyobie<-recode(baza_i$czyobie, '1'="tylko singleplayer", '4'="tylko multiplayer", '5'="single- i multiplayer")
+
+
+#baza_i%>%
+#  ggplot(aes(x=czyobie))+
+#  geom_bar(width=0.7,fill="#39DBDB")+
+#  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+#  theme_minimalism()+
+#  ylab("")+
+#  xlab("W jaki typ gier komputerowych grasz?")
+```
+
+### Ile grają tygodniowo?
+```{r, echo=F}
+baza_i$GRY5<- as.ordered(baza_i$GRY5)
+baza_i$GRY5<-recode(baza_i$GRY5, '1'="Do 1h", '2'="1 do 5h", '3'="5 do 10h", '4'='10 do 15h', '5'="15 do 20h", '6'="20 do 30h", '7'="30 do 40h", '8'="40 do 50h", '9'="Ponad 50h")
+
+
+baza_i%>%
+  ggplot(aes(x=GRY5))+
+  geom_bar(width=0.7,fill="#39DBDB")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Ile średnio godzin poświęcasz tygodniowo na granie?")
+```
+
+### Z kim grają?
+```{r, echo=F}
+baza_i$MULTI1<- as.ordered(baza_i$MULTI1)
+baza_i$MULTI1<-recode(baza_i$MULTI1, '1'="Sam/a", '2'="Ze znajomymi", '3'="mniej więcej po równo")
+
+
+baza_i%>%
+  drop_na(MULTI1)%>%
+  ggplot(aes(x=MULTI1))+
+  geom_bar(width=0.7,fill="#39DBDB")+
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5)+
+  theme_minimalism()+
+  ylab("")+
+  xlab("Grając w gry multiplayer najczęściej grasz:")
+```
+
+## Jak rozumieć wykresy zmiennych
+
+Na poniższym obrazku widać wykres  seksizmu w grach komputerowych w podziale na płeć.
+
+![](/Users/micha/Desktop/studia/analiza wynikow z empirki w r/gg_plec.png)
+Wykres przedstawia średni wynik uzyskany przez kobiety oraz mężczyzn. Na oryginalej skali można było wybierać odpowiedzi od 1 (Zdecydowanie się nie zgadzam) do 7 (Zdecydowanie się zgadzam). Zakres wyników (skala pozioma) jest taki sam.
+
+Czarna kropka pośród pozostałych kropek to średnia uzyskana przez wszystkie osoby z tej samej grupy.
+
+Pozostałe kropki to poszczególne wyniki konkretnych osób.
+
+wykres i pole pod wykresem przedstawia rozkład wartości dla danej zmiennej, tzn. tam, gdzie wykres jest grubszy, tam więcej osób uzyskiwało taki wynik.
+
+prostokąt pod wykresem przedstawia wyniki znajdujące się powyżej 25% aż do 75% wartości w sytuacji, w której uszeregowalibyśmy wyniki od najmniejszego do największego. Innymi słowy, gdyby nasz zbiór danych składał się z liczb od 1 do 100, to owy prostokąt sygnalizowałby liczby od 26 do 75.
+
+Pionowa kreska w prostokącie pokazuje medianę, czyli najczęstszy wynik.
+
+Pozioma kreska rozszerza obszar pokazany przez prostokąt- zaczyna się przy 12.5% wartości, a kończy przy 87.5% wartości.
+
+## Badane zmienne
+
+W tej części opiszę zmienne i pokażę wykresy wartości średnich. Testy statystyczne przedstawione zostaną w sekcji Testy statystyczne.
+
+### Seksizm
+Skorzystałem ze skali seksizmu wymyślonej przez Gliska i Fiske (1996). W ich ujęciu seksizm można podzielić na dwa odmienne seksizmy- wrogi oraz życzliwy. Do obydwu seksizmów było po 5 pytań, na ktore można było udzielić odpowiedzi od 1 (zdecydowanie się nie zgadzam) do 7 (zdecydowanie się zgadzam)
+
+#### Seksizm życzliwy
+Seksizm życzliwy zakłada, że kobiety zasługują na specjalne traktowanie i należy je czcić i zasługją na specjalne traktowanie za sam fakt bycia kobietą tak długo, jak kobieta nie wychodzi ze swojej roli.
+
+##### Użyte pozycje
+
+Zakres: 1 (Zdecydowanie się nie zgadzam) - 7 (Zdecydowanie się zgadzam)
+
+1.  Ludzie nie są naprawdę szczęśliwi, jeśli nie są w związku uczuciowym z osobą przeciwnej płci.
+2. Bez względu na swoje osiągnięcia zawodowe, mężczyzna nie jest całością bez miłości kobiety.
+3. Każdy mężczyzna powinien mieć partnerkę, którą adoruje.
+4. W porównaniu do mężczyzn kobiety mają bardziej wyrafinowany gust i poczucie dobrego smaku.
+5. Kobiety powinny być wielbione i chronione przez mężczyzn.
+
+
+```{r sb, echo=F}
+# Raincloud plot with repeated measurements
+sb_p <- baza %>%
+ggplot(aes(x = SEX, y = SB_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Dark 3")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Seksizm życzliwy w podziale na płeć") + # y-axis label
+    scale_y_continuous(breaks=seq(1,7,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+sb_p
+```
+
+#### Seksizm wrogi
+Seksizm wrogi zakłada bezpośrednie, otwarte uprzedzenie względem kobiet.
+
+##### Użyte pozycje
+
+Zakres: 1 (Zdecydowanie się nie zgadzam) - 7 (Zdecydowanie się zgadzam)
+
+1. Z chwilą, gdy kobieta zdobędzie mężczyznę, zazwyczaj próbuje trzymać go „krótko”.
+2. Kiedy kobiety przegrywają z mężczyznami w uczciwej rywalizacji, zwykle narzekają, że są dyskryminowane.
+3. Kobiety wyolbrzymiają problemy, które mają w pracy.
+4. Kobiety zbyt łatwo się obrażają.
+5. Przejmując kontrolę nad mężczyznami, kobiety dążą do zdobycia władzy.
+
+```{r, echo=F}
+sh_p <- baza %>%
+ggplot(aes(x = SEX, y = SH_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Dark 3")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Seksizm wrogi w podziale na płeć") + # y-axis label
+    scale_y_continuous(breaks=seq(1,7,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+sh_p
+```
+
+#### Seksizm w grach
+Skala ta została skonstruowana na podstawie kwestionariusza oraz konsultacji z graczami i badaczami zajmującymi się tą tematyką (Fox i Tang, 2014). W efekcie uzyskano 16-itemową skalę, którą przetłumaczyłem osobiście, po czym naniosłem poprawki, które wyniknęły ze zwrotnego tłumaczenia wykonanego przez osobę biegłą w języku angielskim. Skala miała mierzyć postrzeganie kobiet w sposób seksistowski w świecie gier komputerowych.
+
+##### Użyte pozycje
+
+Zakres: 1 (Zdecydowanie się nie zgadzam) - 7 (Zdecydowanie się zgadzam)
+
+1. Większość kobiet gra na komputerze tylko dlatego, że gra ze swoim chłopakiem.
+2. Większość kobiet grających na komputerze nie jest w tych grach zbyt dobra.
+3. Kobiety grają na komputerze, by być lepiej postrzegane przez mężczyzn.
+4. Kobiety grają na komputerze, by zdobyć uwagę mężczyzn.
+5. Kobiety za często dają się urazić tym, co dzieje się w grach komputerowych.
+6. Kobiety za często dają się urazić seksistowskimi komentarzami w grach
+7. Kobiety są przewrażliwione na punkcie seksistowskich żartów i zdjęć nagich kobiet, na które 
+można się natknąć grając.
+8. Kobiety nazywające siebie "kobietą-graczem" (ang. gamer girl) uważają, że należy im się 
+specjalne traktowanie.
+9. Fakt, że kobiety grają, sprawia, że poziom gry się obniża.
+10. Jeśli jest jakaś kobieta w gildii lub drużynie, to jest ona na ogół jej najsłabszym członkiem.
+11. Kobiety nie radzą sobie z trash-talkiem równie dobrze, co mężczyźni.
+12. Granie z kobietami sprawia, że gra staje się mniej przyjemna.
+13. Świat gier komputerowych to świat dla mężczyzn, do którego kobiety nie należą.
+14. Kobietom w grach komputerowych bardziej zależy na nawiązywaniu kontaktów z innymi 
+graczami niż czymkolwiek innym.
+15. Kobiety wolą spędzić czas na przebieraniu swojej postaci w grze niż na graniu.
+16. Kobiety nie grają na komputerze po to, by kogoś zabić lub coś osiągnąć.
+
+```{r gg w podziale na plec, echo=F}
+# Raincloud plot with repeated measurements
+gg_p <- baza %>%
+ggplot(aes(x = SEX, y = GG_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 2") + # add color palette
+scale_fill_discrete_qualitative(palette="Dark 3")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Seksizm w grach komputerowych w podziale na płeć") + # y-axis label
+    scale_y_continuous(breaks=seq(1,7,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+gg_p
+
+#hcl_palettes(type = "qualitative")
+```
+
+### Skale postaw
+
+#### Orientacja na dominację społeczną
+Orientacja na dominację 
+społeczną (SDO) jest konstruktem stworzonym przez Pratto, Sidaniusa, Stallworth i Malle (1994), który cechuje się preferencją jednostki do utrzymywania nierówności między grupami. Teoria ta zakłada, że istniejące w społeczeństwie nierówność oraz hierarchiczność grup są uzasadnione i nie ma powodu, aby próbować wyrównywać pozycje różnych grup.
+
+##### Użyte pozycje
+
+Zakres: 1 (Zdecydowanie się nie zgadzam) - 7 (Zdecydowanie się zgadzam)
+
+1. Prawdopodobnie to dobrze, że pewne grupy są na szczycie, a inne na dole.
+2. Mniej ważne grupy powinny znać swoje miejsce.
+3. Powinniśmy zrobić wszystko, co w naszej mocy, żeby wyrównywać szanse różnych grup.(pozycja odwrócona)
+4. Powinniśmy zwiększać równość społeczną. (pozycja odwrócona)
+5. Grupy lepsze powinny dominować nad grupami gorszymi.
+
+```{r sdo, echo=F}
+# Raincloud plot with repeated measurements
+sdo_p <- baza %>%
+ggplot(aes(x = SEX, y = GG_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Warm")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Orientacja na dominację społeczną") + # y-axis label
+    scale_y_continuous(breaks=seq(1,7,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+sdo_p
+```
+
+#### Prawicowy autorytaryzm
+Prawicowy autorytaryzm (RWA) Altemeyera (1998) jest konstruktem mierzącym autorytarne i konserwatywne wartości. Osoby o wysokich wynikach na skali prawicowego autorytaryzmu cechują się uległością autorytetom, wiarą w tradycyjne wartości i potępianie osób, które nie podporządkowują się wspomnianym wartościom.
+
+##### Użyte pozycje
+
+Zakres: 1 (Zdecydowanie się nie zgadzam) - 7 (Zdecydowanie się zgadzam)
+
+1. To, czego naprawdę potrzebuje nasz kraj zamiast zwiększania zakresu praw i swobód obywatelskich, to solidna dawka prawdziwego prawa i porządku.
+2. Odwracanie się od tradycji okaże się pewnego dnia fatalne w skutkach.
+3. Posłuszeństwo i szacunek dla autorytetów to najważniejsze wartości, jakich powinny nauczyć się dzieci.
+4. To, czego naprawdę potrzebuje nasz kraj, to silny i zdecydowany przywódca, który pokona zło i wskaże nam właściwą drogę.
+5. Przyzwoitość i posłuszeństwo wobec prawa są dla nas na dłuższą metę lepsze, niż ciągłe podważanie zasad, na których oparta  jest nasza społeczność.
+6. Właściwym kluczem do dobrego życia jest dyscyplina i posłuszeństwo.
+
+```{r rwa, echo=F}
+# Raincloud plot with repeated measurements
+rwa_p <- baza %>%
+ggplot(aes(x = SEX, y = GG_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Warm")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Prawicowy autorytaryzm") + # y-axis label
+    scale_y_continuous(breaks=seq(1,7,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+rwa_p
+```
+
+### Toksyczność
+
+Toksyczność w grach była mierzona za pomocą skali autorstwa Tanga i Foxa (2016). Skala ta była podzielona na dwie podskale. Jedna z nich dotyczyła toksyczności związanej z płcią, druga toksyczności ogólnej. Każda z podskal była złożona z pięciu itemów, co do których badani mieli na pięciostopniowej skali określić, jak często zdarzały im się wymienione zachowania (1= Nigdy, 5= Zawsze). Skala została przetłumaczona przeze mnie na język polski z zachowaniem niektórych elementów w języku angielskim.
+
+#### Toksyczność związana z płcią
+
+Toksyczność związana z płcią jest związana z bezpośrednią toksycznością przejawianą w grach, która może być określona jako molestowanie (sexual harassment).
+
+##### Użyte pozycje
+
+Zakres: 1 (Nigdy) - 5 (Zawsze)
+
+1. Sugerowałem/-am, że ktoś gra z powodów związanych ze swoją płcią (np. chce się przypodobać swojemu partnerowi, szuka atencji).
+2. Mówiłem/-am komuś, że ją/go kocham (lub pytałem/-am, czy chce ze mną być).
+3. Mówiłem/-am seksistowskie żarty lub/i używałem/-am seksistowskich obelg (np. "wracaj do kuchni").
+4. Komentowałem/-am czyjąś wagę lub wygląd (np. "grubasie", "brzydalu", "fat", "ugly")
+5. Żartowałem/-am o gwałcie lub mówiłem/-am komuś, że go zgwałcę.
+
+
+```{r tox1, echo=F}
+# Raincloud plot with repeated measurements
+tox1_p <- baza %>%
+ggplot(aes(x = SEX, y = TOX1_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Pastel 1")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Toksyczność związana z płcią") + # y-axis label
+    scale_y_continuous(breaks=seq(1,5,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+tox1_p
+```
+
+#### Toksyczność ogólna
+
+Toksyczność ogólna jest rozumiana również jako bezpośrednia forma toksyczności, jednak dotyczy ona zachowań toksycznych nieukierunkowanych na płeć lub wygląd odbiorcy negatywnych komunikatów.
+
+##### Użyte pozycje
+
+1. Przeklinałem/-am (np. "kurwa", "chuj", "fuck", "bitch", "shit").
+2. Obrażałem/-am innych (np. nazywanie trollem, loserem, feederem, mówienie "zamknij się", wyzywanie).
+3. Komentowałem/-am czyjąś inteligencję (np. "debil", "idiota", "retard", "down").
+4. Komentowałem/-am czyjeś umiejętności (np. "noob", "camper", "feeder") lubkomentowałem/-am to, jak ktoś sobie radzi (np. zarzucanie komuś, że przez niego się 
+przegrało).
+5. Prosiłem/-am kogoś, aby wyszedł z gry, przestał w nią grać lub ją odinstalował.
+
+```{r tox2, echo=F}
+# Raincloud plot with repeated measurements
+tox2_p <- baza %>%
+ggplot(aes(x = SEX, y = TOX2_M)) +
+#Add individual observations to the plot
+geom_point( 
+    aes(color = SEX), # we want different colors for each level of x
+    position = position_jitter(width=.1), # add jitter to the observations
+    size=.5, alpha=.8)+ # set the size of each dot. alpha adds 
+#kolory
+#scale_color_discrete_qualitative(palette="Dark 3") + # add color palette
+scale_fill_discrete_qualitative(palette="Pastel 1")+ # add fill palette 
+# dodanie średniej dla każdej podgrupy
+stat_summary(fun=mean, # this indicates we want the mean statistic
+    geom="point", # we want the mean to be represented by a geom
+    shape=21, # use shape 21 (a circle with fill) for the mean
+    size=2, col="black", fill="black")+  # set size, color, & fill 
+# dodanie boxplotów dla podgrup
+geom_half_boxplot(aes(fill=SEX), # different colors for each level of x
+    side="r", outlier.shape=NA, center=TRUE, # styling for boxplots
+    position = position_nudge(x=.15), # position of boxplots
+    errorbar.draw=FALSE, width=.2) + # hide errorbar
+# Add violin plots for observations at each level
+geom_half_violin(aes(fill=SEX), # different colors for each level of x
+    bw=.45, side="r", # styling for the violin plot
+    position = position_nudge(x=.3))+ # position of violins
+# Optional styling
+coord_flip() + # flip x & y coordinates
+    xlab("Płeć") + # x-axis label
+    ylab("Toksyczność ogólna") + # y-axis label
+    scale_y_continuous(breaks=seq(1,5,1)) + # y-axis ticks
+    theme_minimalism() + # apply our custom minimal theme 
+    theme(legend.position="none", # hide legend
+    panel.grid.major.x=element_line())# show major grid for x axis
+tox2_p
+```
+
+## Testy statystyczne
+
+### Testy t-studenta
+Test t-studenta służy do porówywania ze sobą wyników uzyskanych przez dokładnie dwie grupy. Za jego pomocą można sprawdzić, czy grupy istotnie statystycznie różnią się między sobą.
+
+Poniżej znajduje się tabela, w której przedstawione są wyniki uzyskane na wszystkich mierzonych skalach w podziale na płeć.
+M oznacza średnią, SD odchylenie standardowe, t- wartość testu t studenta wraz z poziomiem istotności (gwiazdki) oraz d i 95%CI, czyli mierniki siły efektu
+
+Siła efektu
+
+![](/Users/micha/Desktop/studia/analiza wynikow z empirki w r/Tabela 1.png)
+```{r}
+
+
+```
+
